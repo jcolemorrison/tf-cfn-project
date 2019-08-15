@@ -3,43 +3,25 @@ provider "aws" {
   profile = "default"
 }
 
-provider "aws" {
-  alias   = "uswest2"
-  region  = "us-west-2"
-  profile = "default"
+data "aws_ssm_parameter" "latest_ami" {
+  name = "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
 }
 
-resource "random_string" "instance_name" {
-  length  = 8
-  special = false
-}
-
-
-module "instance" {
-  source             = "./modules/instance"
-  instance_key_name  = "tf-us-east-1"
-  instance_name      = "tf-instance"
-  instance_allow_ssh = true
-}
-
-output "instance_ip" {
-  value = module.instance.instance_public_ip
-}
-
-module "another_instance" {
-  source             = "./modules/instance"
-  instance_key_name  = "tf-us-east-1"
-  instance_name      = "another-tf-instance"
-  instance_allow_ssh = true
-}
-
-module "west_instance" {
-  source             = "./modules/instance"
-  instance_key_name  = null
-  instance_name      = "tf-instance-${random_string.instance_name.result}"
-  instance_allow_ssh = false
-
-  providers = {
-    aws = aws.uswest2
+resource "aws_instance" "tf_instance" {
+  ami           = data.aws_ssm_parameter.latest_ami.value
+  instance_type = "t2.micro"
+  key_name      = var.instance_key_name
+  tags = {
+    Name = var.instance_name
   }
+  vpc_security_group_ids = [
+    aws_security_group.instance_sg.id
+  ]
+
+  iam_instance_profile = aws_iam_instance_profile.instance_profile.name
+
+  user_data = templatefile("${path.module}/userdata.sh", {
+    aws_region     = data.aws_region.current.name
+    log_group_name = "${var.instance_name}-logs"
+  })
 }
